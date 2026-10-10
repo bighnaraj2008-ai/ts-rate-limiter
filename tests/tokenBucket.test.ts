@@ -185,4 +185,125 @@ describe('TokenBucket', () => {
       expect(bucket.getTokensRemaining()).toBe(10);
     });
   });
+
+  describe('Refill Dynamics Over Time', () => {
+    it('refills tokens proportionally based on elapsed time', () => {
+      // 2 tokens per second = 1 token per 500ms
+      const bucket = new TokenBucket({
+        capacity: 10,
+        refillRate: 2,
+        initialTokens: 0,
+        clock: mockClock,
+      });
+
+      expect(bucket.getTokensRemaining()).toBe(0);
+
+      // Advance by 500ms -> should have 1 token
+      currentTime += 500;
+      expect(bucket.getTokensRemaining()).toBe(1);
+
+      // Advance by another 1000ms (total 1500ms) -> should have 3 tokens
+      currentTime += 1000;
+      expect(bucket.getTokensRemaining()).toBe(3);
+    });
+
+    it('does not refill past capacity', () => {
+      const bucket = new TokenBucket({
+        capacity: 5,
+        refillRate: 10,
+        clock: mockClock,
+      });
+
+      // Advance time by 100 seconds
+      currentTime += 100000;
+      expect(bucket.getTokensRemaining()).toBe(5);
+    });
+
+    it('handles fractional token replenishment during consumption', () => {
+      // 1 token per second
+      const bucket = new TokenBucket({
+        capacity: 5,
+        refillRate: 1,
+        initialTokens: 0,
+        clock: mockClock,
+      });
+
+      // 800ms passed -> 0.8 tokens available (not enough for 1 full token)
+      currentTime += 800;
+      expect(bucket.consume(1)).toBe(false);
+      expect(bucket.getTokensRemaining()).toBeCloseTo(0.8);
+
+      // 400ms more (total 1200ms) -> 1.2 tokens available
+      currentTime += 400;
+      expect(bucket.consume(1)).toBe(true);
+      expect(bucket.getTokensRemaining()).toBeCloseTo(0.2);
+    });
+
+    it('handles clock moving backwards gracefully without losing or generating tokens', () => {
+      const bucket = new TokenBucket({
+        capacity: 5,
+        refillRate: 1,
+        initialTokens: 3,
+        clock: mockClock,
+      });
+
+      // Clock moves backwards by 10 seconds
+      currentTime -= 10000;
+      bucket.refill();
+
+      // Tokens should remain unchanged and not corrupted
+      expect(bucket.getTokensRemaining()).toBe(3);
+    });
+  });
+
+  describe('Helper Methods & Header Calculations', () => {
+    it('getTimeUntilTokensAvailable calculates exact wait time', () => {
+      // 2 tokens per second = 1 token every 500ms
+      const bucket = new TokenBucket({
+        capacity: 10,
+        refillRate: 2,
+        initialTokens: 0,
+        clock: mockClock,
+      });
+
+      // For 1 token deficit at 2 tokens/s: 0.5s = 500ms
+      expect(bucket.getTimeUntilTokensAvailable(1)).toBe(500);
+
+      // For 3 tokens deficit: 1.5s = 1500ms
+      expect(bucket.getTimeUntilTokensAvailable(3)).toBe(1500);
+
+      // If tokens already available, wait time is 0
+      currentTime += 2000; // now has 4 tokens
+      expect(bucket.getTimeUntilTokensAvailable(2)).toBe(0);
+      expect(bucket.getTimeUntilTokensAvailable(0)).toBe(0);
+      expect(bucket.getTimeUntilTokensAvailable(-1)).toBe(0);
+    });
+
+    it('getResetTimestampInSeconds returns correct epoch timestamp', () => {
+      const bucket = new TokenBucket({
+        capacity: 10,
+        refillRate: 1, // 1 token/sec
+        initialTokens: 0,
+        clock: mockClock,
+      });
+
+      // currentTime is 1,000,000 ms = 1,000 seconds
+      // Need 2 tokens = 2 seconds
+      // Expected reset timestamp = 1,002 seconds
+      expect(bucket.getResetTimestampInSeconds(2)).toBe(1002);
+    });
+
+    it('reset() replenishes bucket immediately to full capacity', () => {
+      const bucket = new TokenBucket({
+        capacity: 10,
+        refillRate: 1,
+        initialTokens: 0,
+        clock: mockClock,
+      });
+
+      expect(bucket.getTokensRemaining()).toBe(0);
+      bucket.reset();
+      expect(bucket.getTokensRemaining()).toBe(10);
+    });
+  });
 });
