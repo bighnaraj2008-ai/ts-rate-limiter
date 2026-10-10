@@ -49,12 +49,32 @@ export interface RateLimiterMiddleware extends RequestHandler {
 }
 
 /**
+ * Default key generator extracting client IP address.
+ */
+export const defaultKeyGenerator: KeyGenerator = (req: Request): string => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    const firstIp = forwarded.split(',')[0]?.trim();
+    if (firstIp) return firstIp;
+  } else if (Array.isArray(forwarded) && forwarded[0]) {
+    return forwarded[0].trim();
+  }
+
+  return (
+    req.ip ||
+    req.socket?.remoteAddress ||
+    '127.0.0.1'
+  );
+};
+
+/**
  * Creates an Express rate-limiting middleware powered by the Token Bucket algorithm.
  */
 export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddleware {
   const {
     capacity = 60,
     refillRate = 10,
+    keyGenerator = defaultKeyGenerator,
     skip = () => false,
   } = options;
 
@@ -69,6 +89,8 @@ export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddle
     if (skip(req)) {
       return next();
     }
+
+    const _key = keyGenerator(req);
     return next();
   };
 
