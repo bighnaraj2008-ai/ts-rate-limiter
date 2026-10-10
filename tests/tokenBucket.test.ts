@@ -82,4 +82,107 @@ describe('TokenBucket', () => {
       expect(bucket.lastUpdated).toBeLessThanOrEqual(after);
     });
   });
+
+  describe('Token Consumption', () => {
+    it('consumes 1 token by default', () => {
+      const bucket = new TokenBucket({
+        capacity: 5,
+        refillRate: 1,
+        clock: mockClock,
+      });
+
+      expect(bucket.consume()).toBe(true);
+      expect(bucket.getTokensRemaining()).toBe(4);
+    });
+
+    it('consumes arbitrary number of tokens', () => {
+      const bucket = new TokenBucket({
+        capacity: 10,
+        refillRate: 1,
+        clock: mockClock,
+      });
+
+      expect(bucket.consume(4)).toBe(true);
+      expect(bucket.getTokensRemaining()).toBe(6);
+    });
+
+    it('returns false when consuming more tokens than available', () => {
+      const bucket = new TokenBucket({
+        capacity: 5,
+        refillRate: 1,
+        clock: mockClock,
+      });
+
+      expect(bucket.consume(6)).toBe(false);
+      // Tokens should not be deducted if consumption fails
+      expect(bucket.getTokensRemaining()).toBe(5);
+    });
+
+    it('returns true and deducts nothing when consuming 0 tokens', () => {
+      const bucket = new TokenBucket({
+        capacity: 5,
+        refillRate: 1,
+        clock: mockClock,
+      });
+
+      expect(bucket.consume(0)).toBe(true);
+      expect(bucket.getTokensRemaining()).toBe(5);
+    });
+
+    it('throws error for negative or invalid tokens to consume', () => {
+      const bucket = new TokenBucket({
+        capacity: 5,
+        refillRate: 1,
+        clock: mockClock,
+      });
+
+      expect(() => bucket.consume(-1)).toThrow(RangeError);
+      expect(() => bucket.consume(NaN)).toThrow(TypeError);
+      // @ts-expect-error Testing non-number input at runtime
+      expect(() => bucket.consume('two')).toThrow(TypeError);
+    });
+  });
+
+  describe('Burst Handling & Edge Cases', () => {
+    it('handles burst traffic up to the bucket capacity', () => {
+      const capacity = 10;
+      const bucket = new TokenBucket({
+        capacity,
+        refillRate: 1,
+        clock: mockClock,
+      });
+
+      // Rapidly consume entire burst capacity
+      for (let i = 0; i < capacity; i++) {
+        expect(bucket.consume(1)).toBe(true);
+      }
+
+      // Empty bucket
+      expect(bucket.getTokensRemaining()).toBe(0);
+      expect(bucket.consume(1)).toBe(false);
+    });
+
+    it('allows consuming all tokens at once in a single bulk call', () => {
+      const bucket = new TokenBucket({
+        capacity: 10,
+        refillRate: 1,
+        clock: mockClock,
+      });
+
+      expect(bucket.consume(10)).toBe(true);
+      expect(bucket.getTokensRemaining()).toBe(0);
+      expect(bucket.consume(1)).toBe(false);
+    });
+
+    it('fails immediately if requesting tokens exceeding total capacity', () => {
+      const bucket = new TokenBucket({
+        capacity: 10,
+        refillRate: 5,
+        clock: mockClock,
+      });
+
+      expect(bucket.consume(11)).toBe(false);
+      expect(bucket.getTokensRemaining()).toBe(10);
+    });
+  });
 });
