@@ -31,23 +31,38 @@ export type RateLimitHandler = (
 ) => void | Promise<void>;
 
 export interface RateLimiterOptions {
+  /** Maximum token burst capacity. Defaults to 60. */
   capacity?: number;
+  /** Token refill rate per second. Defaults to 10. */
   refillRate?: number;
+  /** Initial tokens available when a new bucket is created. Defaults to capacity. */
   initialTokens?: number;
+  /** Number of tokens to consume per request (or dynamic function). Defaults to 1. */
   tokensPerRequest?: TokensPerRequest;
+  /** Custom key generator (e.g. by IP or header). Defaults to client IP. */
   keyGenerator?: KeyGenerator;
+  /** Function to determine if rate limiting should be skipped for this request. */
   skip?: SkipFunction;
+  /** HTTP status code to return when rate limit is exceeded. Defaults to 429. */
   statusCode?: number;
+  /** Custom error message or JSON object for 429 responses. */
   message?: string | Record<string, unknown>;
+  /** Whether to set standard X-RateLimit-* and Retry-After headers. Defaults to true. */
   headers?: boolean;
+  /** Storage engine for buckets. Defaults to in-memory store with stale eviction. */
   store?: TokenBucketStore;
+  /** Custom clock returning milliseconds (defaults to Date.now). Useful for testing. */
   clock?: () => number;
+  /** Custom handler when rate limit is exceeded. Overrides default JSON response. */
   handler?: RateLimitHandler;
+  /** Optional callback fired when a rate limit is exceeded. Useful for metrics/logging. */
   onLimitReached?: (req: Request, key: string) => void;
 }
 
 export interface RateLimiterMiddleware extends RequestHandler {
+  /** Underlying bucket storage */
   store: TokenBucketStore;
+  /** Resets or deletes a specific rate limit key */
   resetKey: (key: string) => boolean;
 }
 
@@ -72,6 +87,9 @@ export const defaultKeyGenerator: KeyGenerator = (req: Request): string => {
 
 /**
  * Creates an Express rate-limiting middleware powered by the Token Bucket algorithm.
+ *
+ * @param options Rate limiter configuration options.
+ * @returns Express RequestHandler with additional store inspection utilities.
  */
 export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddleware {
   const {
@@ -81,8 +99,17 @@ export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddle
     tokensPerRequest = 1,
     keyGenerator = defaultKeyGenerator,
     skip = () => false,
+    statusCode = 429,
+    message = {
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: 'Rate limit exceeded. Please try again later.',
+    },
+    headers = true,
     store = new MemoryStore(),
     clock = () => Date.now(),
+    handler,
+    onLimitReached,
   } = options;
 
   if (capacity <= 0 || !isFinite(capacity)) {
@@ -92,7 +119,7 @@ export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddle
     throw new RangeError(`Refill rate must be a positive finite number, received: ${refillRate}`);
   }
 
-  const middleware = (req: Request, _res: Response, next: NextFunction): void => {
+  const middleware = (req: Request, res: Response, next: NextFunction): void => {
     if (skip(req)) {
       return next();
     }
@@ -118,8 +145,49 @@ export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddle
     }
 
     const allowed = bucket.consume(cost);
+    const tokensRemaining = bucket.getTokensRemaining();
+    const flooredRemaining = Math.max(0, Math.floor(tokensRemaining));
+    const resetTimestamp = bucket.getResetTimestampInSeconds(cost > 0 ? cost : 1);
+
+    req.rateLimit = {
+      limit: capacity,
+      remaining: flooredRemaining,
+      resetTime: resetTimestamp,
+    };
+
+    if (headers && !res.headersSent) {
+      res.setHeader('X-RateLimit-Limit', capacity.toString());
+      res.setHeader('X-RateLimit-Remaining', flooredRemaining.toString());
+      res.setHeader('X-RateLimit-Reset', resetTimestamp.toString());
+    }
+
     if (allowed) {
       return next();
+    }
+
+    // Rate limit violated
+    if (onLimitReached) {
+      onLimitReached(req, key);
+    }
+
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil(bucket.getTimeUntilTokensAvailable(cost > 0 ? cost : 1) / 1000)
+    );
+
+    if (headers && !res.headersSent) {
+      res.setHeader('Retry-After', retryAfterSeconds.toString());
+    }
+
+    if (handler) {
+      handler(req, res, next, options);
+      return;
+    }
+
+    if (typeof message === 'string') {
+      res.status(statusCode).send(message);
+    } else {
+      res.status(statusCode).json(message);
     }
   };
 
