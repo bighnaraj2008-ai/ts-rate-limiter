@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { TokenBucket } from './tokenBucket';
+import { TokenBucketStore, MemoryStore } from './store';
 
 export interface RateLimitInfo {
   /** Maximum number of tokens (capacity) */
@@ -39,13 +40,15 @@ export interface RateLimiterOptions {
   statusCode?: number;
   message?: string | Record<string, unknown>;
   headers?: boolean;
+  store?: TokenBucketStore;
   clock?: () => number;
   handler?: RateLimitHandler;
   onLimitReached?: (req: Request, key: string) => void;
 }
 
 export interface RateLimiterMiddleware extends RequestHandler {
-  resetKey?: (key: string) => boolean;
+  store: TokenBucketStore;
+  resetKey: (key: string) => boolean;
 }
 
 /**
@@ -74,8 +77,12 @@ export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddle
   const {
     capacity = 60,
     refillRate = 10,
+    initialTokens,
+    tokensPerRequest = 1,
     keyGenerator = defaultKeyGenerator,
     skip = () => false,
+    store = new MemoryStore(),
+    clock = () => Date.now(),
   } = options;
 
   if (capacity <= 0 || !isFinite(capacity)) {
@@ -85,14 +92,42 @@ export function rateLimiter(options: RateLimiterOptions = {}): RateLimiterMiddle
     throw new RangeError(`Refill rate must be a positive finite number, received: ${refillRate}`);
   }
 
-  const middleware: RequestHandler = (req: Request, _res: Response, next: NextFunction): void => {
+  const middleware = (req: Request, _res: Response, next: NextFunction): void => {
     if (skip(req)) {
       return next();
     }
 
-    const _key = keyGenerator(req);
-    return next();
+    const key = keyGenerator(req);
+    let bucket = store.get(key);
+
+    if (!bucket) {
+      bucket = new TokenBucket({
+        capacity,
+        refillRate,
+        initialTokens: initialTokens ?? capacity,
+        clock,
+      });
+      store.set(key, bucket);
+    }
+
+    const cost =
+      typeof tokensPerRequest === 'function' ? tokensPerRequest(req) : tokensPerRequest;
+
+    if (cost < 0 || isNaN(cost)) {
+      throw new RangeError(`tokensPerRequest must be non-negative, received: ${cost}`);
+    }
+
+    const allowed = bucket.consume(cost);
+    if (allowed) {
+      return next();
+    }
   };
 
-  return middleware as RateLimiterMiddleware;
+  const rateLimiterMiddleware = middleware as RateLimiterMiddleware;
+  rateLimiterMiddleware.store = store;
+  rateLimiterMiddleware.resetKey = (key: string): boolean => {
+    return store.delete(key);
+  };
+
+  return rateLimiterMiddleware;
 }
