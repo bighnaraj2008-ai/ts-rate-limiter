@@ -64,10 +64,10 @@ export class TokenBucket {
   }
 
   /**
-   * Current number of tokens available in the bucket.
+   * Current number of tokens available in the bucket, accounting for time elapsed.
    */
   public get currentTokens(): number {
-    return this._currentTokens;
+    return this.getTokensRemaining();
   }
 
   /**
@@ -99,6 +99,31 @@ export class TokenBucket {
   }
 
   /**
+   * Attempts to consume the specified number of tokens from the bucket.
+   *
+   * @param tokens Number of tokens to consume (defaults to 1). Must be non-negative.
+   * @returns `true` if sufficient tokens were available and deducted; `false` otherwise.
+   */
+  public consume(tokens: number = 1): boolean {
+    this.refill();
+
+    if (this._currentTokens >= tokens) {
+      this._currentTokens -= tokens;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Returns the current number of available tokens in the bucket after replenishment.
+   */
+  public getTokensRemaining(): number {
+    this.refill();
+    return this._currentTokens;
+  }
+
+  /**
    * Calculates the time in milliseconds until the required number of tokens will be available.
    *
    * @param requiredTokens The number of tokens needed (defaults to 1).
@@ -109,12 +134,12 @@ export class TokenBucket {
       return 0;
     }
 
-    this.refill();
-    if (this._currentTokens >= requiredTokens) {
+    const available = this.getTokensRemaining();
+    if (available >= requiredTokens) {
       return 0;
     }
 
-    const deficit = requiredTokens - this._currentTokens;
+    const deficit = requiredTokens - available;
     const secondsNeeded = deficit / this.refillRate;
     return Math.ceil(secondsNeeded * 1000);
   }
