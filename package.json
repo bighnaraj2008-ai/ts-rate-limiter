@@ -1,0 +1,18 @@
+{
+  "name": "ts-rate-limiter",
+  "version": "1.0.0",
+  "description": "Production-grade, highly-performant API rate limiter middleware in TypeScript using the Token Bucket algorithm.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "rate-limiter",
+    "token-bucket",
+    "express",
+    "middleware",
+    "typescript"
+  ],
+  "license": "MIT"
+}
