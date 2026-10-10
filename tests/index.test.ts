@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import * as Lib from '../src/index';
 
 describe('Public Exports (src/index.ts)', () => {

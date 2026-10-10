@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { MemoryStore } from '../src/store';
 import { TokenBucket } from '../src/tokenBucket';
 

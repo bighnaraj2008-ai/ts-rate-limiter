@@ -41,16 +41,16 @@ export class TokenBucket {
     let initTokens: number | undefined;
     let clk: (() => number) | undefined;
 
-    if (typeof optionsOrCapacity === 'object' && optionsOrCapacity !== null) {
-      cap = optionsOrCapacity.capacity;
-      rate = optionsOrCapacity.refillRate;
-      initTokens = optionsOrCapacity.initialTokens;
-      clk = optionsOrCapacity.clock;
-    } else {
+    if (typeof optionsOrCapacity === 'number') {
       cap = optionsOrCapacity;
       rate = refillRateParam!;
       initTokens = initialTokensParam;
       clk = clockParam;
+    } else {
+      cap = optionsOrCapacity.capacity;
+      rate = optionsOrCapacity.refillRate;
+      initTokens = optionsOrCapacity.initialTokens;
+      clk = optionsOrCapacity.clock;
     }
 
     if (typeof cap !== 'number' || isNaN(cap) || cap <= 0 || !isFinite(cap)) {

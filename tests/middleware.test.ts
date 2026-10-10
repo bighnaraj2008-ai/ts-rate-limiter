@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import express, { Express, Request, Response } from 'express';
 import request from 'supertest';
 import { rateLimiter } from '../src/middleware';

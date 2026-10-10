@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { TokenBucket } from '../src/tokenBucket';
 
 describe('TokenBucket', () => {
@@ -5,7 +6,7 @@ describe('TokenBucket', () => {
   const mockClock = () => currentTime;
 
   beforeEach(() => {
-    currentTime = 1000000; // arbitrary base timestamp in ms
+    currentTime = 0; // arbitrary base timestamp in ms
   });
 
   describe('Initialization & Validation', () => {
@@ -138,8 +139,7 @@ describe('TokenBucket', () => {
 
       expect(() => bucket.consume(-1)).toThrow(RangeError);
       expect(() => bucket.consume(NaN)).toThrow(TypeError);
-      // @ts-expect-error Testing non-number input at runtime
-      expect(() => bucket.consume('two')).toThrow(TypeError);
+      expect(() => bucket.consume('two' as unknown as number)).toThrow(TypeError);
     });
   });
 
@@ -287,10 +287,10 @@ describe('TokenBucket', () => {
         clock: mockClock,
       });
 
-      // currentTime is 1,000,000 ms = 1,000 seconds
+      // currentTime is 0 ms
       // Need 2 tokens = 2 seconds
-      // Expected reset timestamp = 1,002 seconds
-      expect(bucket.getResetTimestampInSeconds(2)).toBe(1002);
+      // Expected reset timestamp = 2 seconds
+      expect(bucket.getResetTimestampInSeconds(2)).toBe(2);
     });
 
     it('reset() replenishes bucket immediately to full capacity', () => {
