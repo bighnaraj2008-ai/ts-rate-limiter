@@ -85,7 +85,7 @@ npm install ts-rate-limiter
 Or clone and build from source:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/bighnaraj2008-ai/ts-rate-limiter.git
 cd ts-rate-limiter
 npm install
 npm run build
